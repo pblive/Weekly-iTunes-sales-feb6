@@ -1,0 +1,93 @@
+<?php
+
+$start = new DateTimeImmutable('monday this week');
+$url = 'https://buster.cheapcharts.de/v1/OfferList.php?store=itunes&listType=onsale&country=gb&itemType=buymovies&genreIds=0&quality=sd&sort=latestPricechange&offset=0&limit=400&releaseYear=1900-2023&priceRange=all&iTunesExtras=0&soundFormat=all&hdrFormat=all&studio=&imdbRange=0&rottenRange=0&metaRange=0';
+$bundlesUrl = 'https://buster.cheapcharts.de/v1/OfferList.php?store=itunes&listType=bundles&country=gb&itemType=buymovies&genreIds=0&quality=sd&sort=latestPricechange&offset=0&limit=400&releaseYear=1900-2023&priceRange=all&iTunesExtras=0&soundFormat=all&hdrFormat=all&studio=&imdbRange=0&rottenRange=0&metaRange=0';
+$contents = json_decode(file_get_contents($url), true);
+
+// multidimensional by date then price
+$offers = [];
+
+if (!is_array($contents) || !isset($contents['status']) || $contents['status'] !== 'success') {
+    echo "Failed to get offers";
+    print_r($contents);
+    die();
+}
+
+foreach($contents['results']['buymovies'] as $m) {
+    $date = isset($m['priceHdLastChangeDate']) ? $m['priceHdLastChangeDate'] : $m['priceSdLastChangeDate'];
+    $cost = (string)(isset($m['priceHd']) ? $m['priceHd'] : $m['priceSd']);
+    $isBest = (bool) isset($m['priceHdIsBest']) ? $m['priceHdIsBest'] : $m['priceSdIsBest'];
+
+    if (strtotime($date) < $start->getTimestamp() || $m['isMovieBundle']) {
+        continue;
+    }
+    if (!isset($offers[$cost])) {
+        $offers[$cost] = [];
+    }
+    $title = $m['title'];
+    $title .= $m['has4K'] ? ' (4K)' : '';
+    $title .= $m['hasAtmos'] ? ' (Atmos)' : '';
+    $title .= $isBest ? ' (Best ever price)' : '';
+    $title .= $date !== $start->format('Y-m-d') ? ' - Added '.date('jS F',strtotime($date)) : '';
+
+    $offers[$cost][] = [
+        'title' => $title,
+        '4k' => (bool) $m['has4K'],
+        'added' => strtotime($date)
+    ];
+}
+
+ksort($offers);
+foreach ($offers as $cost => $titles) {
+    echo "\n£{$cost}\n";
+    usort($titles, function($a, $b) {
+        return $b['4k'] <=> $a['4k'] ?: $b['added'] <=> $a['added'];
+    });
+    foreach ($titles as $t) {
+        echo "{$t['title']}\n";
+    }
+}
+
+// bundles
+$bundlesUrl = 'https://buster.cheapcharts.de/v1/OfferList.php?store=itunes&listType=bundles&country=gb&itemType=buymovies&genreIds=0&quality=sd&sort=latestPricechange&offset=0&limit=400&releaseYear=1900-2023&priceRange=all&iTunesExtras=0&soundFormat=all&hdrFormat=all&studio=&imdbRange=0&rottenRange=0&metaRange=0';
+$contents = json_decode(file_get_contents($bundlesUrl), true);
+
+if (!is_array($contents) || !isset($contents['status']) || $contents['status'] !== 'success') {
+    echo "Failed to get bundles";
+    print_r($contents);
+    die();
+}
+
+$bundles = [];
+
+foreach($contents['results']['buymovies'] as $m) {
+    $date = isset($m['priceHdLastChangeDate']) ? $m['priceHdLastChangeDate'] : $m['priceSdLastChangeDate'];
+    $cost = (string)(isset($m['priceHd']) ? $m['priceHd'] : $m['priceSd']);
+    $isBest = (bool) isset($m['priceHdIsBest']) ? $m['priceHdIsBest'] : $m['priceSdIsBest'];
+
+    if (strtotime($date) < $start->getTimestamp() || !$m['isMovieBundle']) {
+        continue;
+    }
+
+    $title = $m['title'];
+    $title .= $m['has4K'] ? ' (4K)' : '';
+    $title .= $m['hasAtmos'] ? ' (Atmos)' : '';
+    $title .= $isBest ? ' (Best ever price)' : '';
+    $title .= $date !== $start->format('Y-m-d') ? ' - Added '.date('jS F',strtotime($date)) : '';
+
+    $bundles[] = [
+        'title' => $title,
+        'cost' => $cost,
+        'added' => strtotime($date)
+
+    ];
+    usort($bundles, function($a, $b) {
+        return $a['cost'] <=> $b['cost'] ?: $b['added'] <=> $a['added'];
+    });
+}
+
+echo "\nBundles\n";
+foreach($bundles as $b) {
+    echo "{$b['title']} £{$b['cost']}\n";
+}
